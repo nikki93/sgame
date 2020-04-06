@@ -14,20 +14,26 @@ local function prepare(...)
     return check(db:prepare(...))
 end
 
-local function run(s)
+local function run(s, ...)
+    if select('#', ...) > 0 then
+        if type(select(1, ...)) == 'table' then
+            s:bind_names(...)
+        else
+            s:bind_values(...)
+        end
+    end
     while s:step() == sqlite3.ROW do
     end
     s:reset()
 end
 
-local function exec(...)
-    check(db:exec(...))
-end
-
-local function execBind(sql, ...)
-    local s = check(db:prepare(sql))
-    check(s:bind_values(...))
-    run(s)
+local function exec(sql, ...)
+    if select('#', ...) > 0 then
+        local s = check(db:prepare(sql))
+        run(s, ...)
+    else
+        check(db:exec(sql))
+    end
 end
 
 
@@ -60,25 +66,35 @@ function love.load()
             insert into object (name) values ("test");
         ]])
         local id = db:last_insert_rowid()
-        execBind([[
+        exec([[
             insert into position (id, x, y) values (?, ?, ?);
         ]], id, W * math.random(), H * math.random())
-        execBind([[
+        exec([[
             insert into circle (id, radius) values (?, 20);
         ]], id)
     end
 end
 
-local drawS = prepare([[
+
+local drawCircleS = prepare([[
     select position.x, position.y, circle.radius
         from position, circle
         where position.id = circle.id;
 ]])
 function love.draw()
-    for x, y, radius in drawS:urows() do
+    for x, y, radius in drawCircleS:urows() do
         love.graphics.circle('fill', x, y, radius)
     end
-    drawS:reset()
+    drawCircleS:reset()
+end
+
+
+local updateS = prepare([[
+    update position
+        set y = y + 100 * $dt;
+]])
+function love.update(dt)
+    run(updateS, { dt = dt })
 end
 
 
