@@ -42,7 +42,7 @@ end
 
 
 run(prepare({[[
-    pragma foreign_keys;
+    pragma foreign_keys = on;
 ]], [[
     create table object (
         id integer primary key,
@@ -50,21 +50,18 @@ run(prepare({[[
     );
 ]], [[
     create table position (
-        id, x, y,
-
-        foreign key (id) references object(id)
+        id references object(id) on delete cascade,
+        x, y
     );
 ]], [[
     create table velocity (
-        id, vx, vy,
-
-        foreign key (id) references object(id)
+        id references object(id) on delete cascade,
+        vx, vy
     );
 ]], [[
     create table circle (
-        id, radius,
-
-        foreign key (id) references object(id)
+        id references object(id) on delete cascade,
+        radius
     );
 ]]}))
 
