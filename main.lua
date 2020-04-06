@@ -59,6 +59,11 @@ run(prepare({[[
         vx, vy
     );
 ]], [[
+    create table color (
+        id references object(id) on delete cascade,
+        r, g, b
+    );
+]], [[
     create table circle (
         id references object(id) on delete cascade,
         radius
@@ -68,7 +73,7 @@ run(prepare({[[
 
 function love.load()
     local W, H = love.graphics.getDimensions()
-    for i = 1, 20 do
+    for i = 1, 200 do
         run(prepare([[
             insert into object (name) values ("test");
         ]]))
@@ -78,19 +83,30 @@ function love.load()
         ]], [[
             insert into velocity (id, vx, vy) values ($id, 0, 0);
         ]], [[
-            insert into circle (id, radius) values ($id, 20);
-        ]]}), { id = id, x = W * math.random(), y = H * math.random() })
+            insert into color (id, r, g, b) values ($id, $r, $g, $b);
+        ]], [[
+            insert into circle (id, radius) values ($id, $radius);
+        ]]}), {
+            id = id,
+            x = W * math.random(),
+            y = H * math.random(),
+            r = math.random(),
+            g = math.random(),
+            b = math.random(),
+            radius = math.random(20, 60),
+        })
     end
 end
 
 
 local drawCircleS = prepare([[
-    select position.x, position.y, circle.radius
-        from position, circle
-        where position.id = circle.id;
+    select position.x, position.y, color.r, color.g, color.b, circle.radius
+        from position, color, circle
+        where position.id = color.id and position.id = circle.id;
 ]])
 function love.draw()
-    for x, y, radius in drawCircleS:urows() do
+    for x, y, r, g, b, radius in drawCircleS:urows() do
+        love.graphics.setColor(r, g, b)
         love.graphics.circle('fill', x, y, radius)
     end
     drawCircleS:reset()
@@ -118,17 +134,16 @@ local updateS = prepare({[[
 ]], [[
     update velocity
         set
-            vy = -vy
+            vy = -abs(vy)
         where
             exists (
                 select *
-                    from position
-                    where position.id = velocity.id and position.y > $H
+                    from position, circle
+                    where
+                        position.id = velocity.id and
+                        position.id = circle.id and
+                        position.y + circle.radius > $H
             )
-]], [[
-    update position
-        set y = $H
-        where y > $H;
 ]]})
 function love.update(dt)
     local W, H = love.graphics.getDimensions()
