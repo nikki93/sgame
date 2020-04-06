@@ -10,11 +10,24 @@ local function check(...)
     return ...
 end
 
-local function prepare(...)
-    return check(db:prepare(...))
+local function prepare(sql)
+    if type(sql) == 'table' then
+        local r = {}
+        for _, each in ipairs(sql) do
+            table.insert(r, prepare(each))
+        end
+        return r
+    end
+    return (check(db:prepare(sql)))
 end
 
 local function run(s, ...)
+    if type(s) == 'table' then
+        for _, each in ipairs(s) do
+            run(each, ...)
+        end
+        return
+    end
     if select('#', ...) > 0 then
         if type(select(1, ...)) == 'table' then
             s:bind_names(...)
@@ -27,51 +40,49 @@ local function run(s, ...)
     s:reset()
 end
 
-local function exec(sql, ...)
-    if select('#', ...) > 0 then
-        local s = check(db:prepare(sql))
-        run(s, ...)
-    else
-        check(db:exec(sql))
-    end
-end
 
-
-exec([[
+run(prepare({[[
     pragma foreign_keys;
-
+]], [[
     create table object (
         id integer primary key,
         name
     );
-
+]], [[
     create table position (
         id, x, y,
 
         foreign key (id) references object(id)
     );
+]], [[
+    create table velocity (
+        id, vx, vy,
 
+        foreign key (id) references object(id)
+    );
+]], [[
     create table circle (
         id, radius,
 
         foreign key (id) references object(id)
     );
-]])
+]]}))
 
 
 function love.load()
     local W, H = love.graphics.getDimensions()
     for i = 1, 20 do
-        exec([[
+        run(prepare([[
             insert into object (name) values ("test");
-        ]])
+        ]]))
         local id = db:last_insert_rowid()
-        exec([[
-            insert into position (id, x, y) values (?, ?, ?);
-        ]], id, W * math.random(), H * math.random())
-        exec([[
-            insert into circle (id, radius) values (?, 20);
-        ]], id)
+        run(prepare({[[
+            insert into position (id, x, y) values ($id, $x, $y);
+        ]], [[
+            insert into velocity (id, vx, vy) values ($id, 0, 0);
+        ]], [[
+            insert into circle (id, radius) values ($id, 20);
+        ]]}), { id = id, x = W * math.random(), y = H * math.random() })
     end
 end
 
@@ -89,17 +100,44 @@ function love.draw()
 end
 
 
-local updateS = prepare([[
+local updateS = prepare({[[
+    update velocity
+        set
+            vy = vy + 32 * 9.8 * $dt;
+]], [[
     update position
-        set y = y + 100 * $dt;
-]])
+        set
+            (x, y) = (
+                select position.x + velocity.vx * $dt, position.y + velocity.vy * $dt
+                    from velocity
+                    where position.id = velocity.id
+            )
+        where
+            exists (
+                select *
+                    from position, velocity
+                    where position.id = velocity.id
+            );
+]], [[
+    update velocity
+        set
+            vy = -vy
+        where
+            exists (
+                select *
+                    from position
+                    where position.id = velocity.id and position.y > $H
+            )
+]], [[
+    update position
+        set y = $H
+        where y > $H;
+]]})
 function love.update(dt)
-    run(updateS, { dt = dt })
-end
-
-
-local ui = castle.ui
-
-function castle.uiupdate()
-    do return end
+    local W, H = love.graphics.getDimensions()
+    run(updateS, {
+        dt = dt,
+        W = W,
+        H = H,
+    })
 end
